@@ -1367,10 +1367,14 @@ INSERT INTO {$componentTable} SELECT distinct gc.contact_id FROM civicrm_group_c
           if (isset($query->_fields[$field]['data_type'])) {
 
             switch ($query->_fields[$field]['data_type']) {
+              case 'String':
+                $length = CRM_Utils_Array::value('text_length', $query->_fields[$field], 255);
+                $sqlColumns[$fieldName] = "$fieldName varchar($length)";
+                break;
+
               case 'Country':
               case 'StateProvince':
               case 'Link':
-              case 'String':
                 $sqlColumns[$fieldName] = "$fieldName varchar(255)";
                 break;
 
