@@ -216,14 +216,15 @@ class CRM_Core_Form_Renderer extends HTML_QuickForm_Renderer_ArraySmarty {
     }
     if ($val) {
       $entity = $field->getAttribute('data-api-entity');
-      $api = json_decode($field->getAttribute('data-api-params'), TRUE);
-      $params = CRM_Utils_Array::value('params', $api, array());
+      // Get api params, ensure it is an array
+      $params = $field->getAttribute('data-api-params');
+      $params = $params ? json_decode($params, TRUE) : array();
       // Support serialized values
       if (strpos($val, CRM_Core_DAO::VALUE_SEPARATOR) !== FALSE) {
         $val = str_replace(CRM_Core_DAO::VALUE_SEPARATOR, ',', trim($val, CRM_Core_DAO::VALUE_SEPARATOR));
         $field->setValue($val);
       }
-      $result = civicrm_api3($entity, 'getlist', array('id' => $val, 'params' => $params));
+      $result = civicrm_api3($entity, 'getlist', array('id' => $val) + $params);
       if ($field->isFrozen()) {
         $field->removeAttribute('class');
       }

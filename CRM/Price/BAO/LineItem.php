@@ -55,16 +55,31 @@ class CRM_Price_BAO_LineItem extends CRM_Price_DAO_LineItem {
    * @static
    */
   static function create(&$params) {
-    //create mode only as we don't support editing line items
-
-    CRM_Utils_Hook::pre('create', 'LineItem', $params['entity_id'], $params);
+    $id = CRM_Utils_Array::value('id', $params);
+    if ($id) {
+      CRM_Utils_Hook::pre('edit', 'LineItem', $id, $params);
+    }
+    else {
+      CRM_Utils_Hook::pre('create', 'LineItem', $params['entity_id'], $params);
+    }
+    
+    // unset entity table and entity id in $params
+    // we never update the entity table and entity id during update mode
+    if ($id) {
+      unset($params['entity_id'], $params['entity_table']);
+    }
 
     $lineItemBAO = new CRM_Price_BAO_LineItem();
     $lineItemBAO->copyValues($params);
 
     $return = $lineItemBAO->save();
 
-    CRM_Utils_Hook::post('create', 'LineItem', $params['entity_id'], $params);
+    if ($id) {
+      CRM_Utils_Hook::post('edit', 'LineItem', $id, $params);
+    }
+    else {
+      CRM_Utils_Hook::post('create', 'LineItem', $params['entity_id'], $params);
+    }
 
     return $return;
   }
@@ -92,6 +107,12 @@ class CRM_Price_BAO_LineItem extends CRM_Price_DAO_LineItem {
     return NULL;
   }
 
+  /**
+   * @param $entityId
+   * @param $entityTable
+   *
+   * @return null|string
+   */
   static function getLineTotal($entityId, $entityTable) {
     $sqlLineItemTotal = "SELECT SUM(li.line_total)
 FROM civicrm_line_item li
@@ -111,10 +132,11 @@ AND li.entity_id = {$entityId}
    *
    * @param null $isQuick
    * @param bool $isQtyZero
+   * @param bool $relatedEntity
    *
    * @return array of line items
    */
-  static function getLineItems($entityId, $entity = 'participant', $isQuick = NULL , $isQtyZero = TRUE) {
+  static function getLineItems($entityId, $entity = 'participant', $isQuick = NULL , $isQtyZero = TRUE, $relatedEntity = FALSE) {
     $selectClause = $whereClause = $fromClause = NULL;
     $selectClause = "
       SELECT    li.id,
@@ -133,13 +155,20 @@ AND li.entity_id = {$entityId}
       li.financial_type_id,
       pfv.description";
 
+    $condition = "li.entity_id = %2.id AND li.entity_table = 'civicrm_%2'";
+    if ($relatedEntity) {
+      $condition = "li.contribution_id = %2.id ";
+    }
+
     $fromClause = "
       FROM      civicrm_%2 as %2
-      LEFT JOIN civicrm_line_item li ON ( li.entity_id = %2.id AND li.entity_table = 'civicrm_%2')
+      LEFT JOIN civicrm_line_item li ON ({$condition})
       LEFT JOIN civicrm_price_field_value pfv ON ( pfv.id = li.price_field_value_id )
       LEFT JOIN civicrm_price_field pf ON (pf.id = li.price_field_id )";
     $whereClause = "
       WHERE     %2.id = %1";
+
+    $orderByClause = " ORDER BY pf.weight, pfv.weight";
 
     if ($isQuick) {
       $fromClause .= " LEFT JOIN civicrm_price_set cps on cps.id = pf.price_set_id ";
@@ -161,7 +190,7 @@ AND li.entity_id = {$entityId}
       2 => array($entity, 'Text'),
     );
 
-    $dao = CRM_Core_DAO::executeQuery("$selectClause $fromClause $whereClause", $params);
+    $dao = CRM_Core_DAO::executeQuery("$selectClause $fromClause $whereClause $orderByClause", $params);
     while ($dao->fetch()) {
       if (!$dao->id) {
         continue;
@@ -319,7 +348,9 @@ AND li.entity_id = {$entityId}
           $line['contribution_id'] = $entityId;
         }
         else {
-          $line['contribution_id'] = $contributionDetails->id;
+          if (!empty($contributionDetails->id)) {
+            $line['contribution_id'] = $contributionDetails->id;
+          }
         }
         // if financial type is not set and if price field value is NOT NULL
         // get financial type id of price field value
@@ -334,6 +365,12 @@ AND li.entity_id = {$entityId}
     }
   }
 
+  /**
+   * @param $entityId
+   * @param string $entityTable
+   * @param $amount
+   * @param null $otherParams
+   */
   public static function syncLineItems($entityId, $entityTable = 'civicrm_contribution', $amount, $otherParams = NULL) {
     if (!$entityId || CRM_Utils_System::isNull($amount))
       return;

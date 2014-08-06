@@ -41,6 +41,12 @@ class CRM_Utils_System_WordPress extends CRM_Utils_System_Base {
    *
    */
   function __construct() {
+    /**
+     * deprecated property to check if this is a drupal install. The correct method is to have functions on the UF classes for all UF specific
+     * functions and leave the codebase oblivious to the type of CMS
+     * @deprecated
+     * @var bool
+     */
     $this->is_drupal = FALSE;
   }
 
@@ -475,6 +481,16 @@ class CRM_Utils_System_WordPress extends CRM_Utils_System_Base {
       date_default_timezone_set($wpUserTimezone);
       CRM_Core_Config::singleton()->userSystem->setMySQLTimeZone();
     }
+    require_once ($cmsRootPath . DIRECTORY_SEPARATOR . 'wp-includes/pluggable.php');
+    $uid = CRM_Utils_Array::value('uid', $name);
+    if ($uid) {
+      $account = wp_set_current_user($uid);
+      if ($account && $account->data->ID) {
+        global $user;
+        $user = $account;
+        return TRUE;
+      }
+    }
     return true;
   }
 
@@ -732,6 +748,19 @@ class CRM_Utils_System_WordPress extends CRM_Utils_System_Base {
    */
   function getTimeZoneString() {
     return get_option('timezone_string');
+  }
+
+  /**
+   * Get Url to view user record
+   * @param integer $contactID Contact ID
+   *
+   * @return string
+   */
+  function getUserRecordUrl($contactID) {
+    $uid = CRM_Core_BAO_UFMatch::getUFId($contactID);
+    if (CRM_Core_Session::singleton()->get('userID') == $contactID || CRM_Core_Permission::checkAnyPerm(array('cms:administer users'))) {
+      return CRM_Core_Config::singleton()->userFrameworkBaseURL . "wp-admin/user-edit.php?user_id=" . $uid;
+    }
   }
 }
 

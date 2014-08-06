@@ -182,7 +182,7 @@ VALUES
 -- new activity types required for partial payments
 SELECT @option_group_id_act     := max(id) from civicrm_option_group where name = 'activity_type';
 SELECT @option_group_id_act_wt  := MAX(weight) FROM civicrm_option_value WHERE option_group_id = @option_group_id_act;
-SELECT @option_group_id_act_val := MAX(value) FROM civicrm_option_value WHERE option_group_id = @option_group_id_act;
+SELECT @option_group_id_act_val := MAX(ROUND(value)) FROM civicrm_option_value WHERE option_group_id = @option_group_id_act;
 SELECT @contributeCompId := max(id) FROM civicrm_component where name = 'CiviContribute';
 
 INSERT INTO
@@ -240,7 +240,7 @@ ALTER TABLE  `civicrm_group` CHANGE  `visibility`  `visibility` VARCHAR( 24 ) CH
 ALTER TABLE  `civicrm_contact` CHANGE  `preferred_mail_format`  `preferred_mail_format` VARCHAR( 8 ) CHARACTER SET utf8 COLLATE utf8_unicode_ci NULL DEFAULT  'Both' COMMENT  'What is the preferred mode of sending an email.';
 
 -- CRM-14183
-INSERT INTO civicrm_state_province (country_id, abbreviation, name) VALUES (1157, "PL", "Plateau");
+INSERT IGNORE INTO civicrm_state_province (country_id, abbreviation, name) VALUES (1157, "PL", "Plateau");
 UPDATE civicrm_state_province SET name = "Abuja Federal Capital Territory" WHERE name = "Abuja Capital Territory";
 
 -- CRM-13992
@@ -284,7 +284,7 @@ ALTER TABLE `civicrm_event`
   CHANGE is_template is_template tinyint(4) DEFAULT '0' COMMENT 'whether the event has template';
 
 -- CRM-14493
-INSERT INTO civicrm_state_province (country_id, abbreviation, name) VALUES (1085, "61", "Pieria");
+INSERT IGNORE INTO civicrm_state_province (country_id, abbreviation, name) VALUES (1085, "61", "Pieria");
 
 -- CRM-14445
 ALTER TABLE `civicrm_option_group`
@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS `civicrm_case_type` (
   `is_active` tinyint(4) DEFAULT NULL COMMENT 'Is this entry active?',
   `is_reserved` tinyint(4) DEFAULT NULL COMMENT 'Is this case type a predefined system type?',
   `weight` int(11) NOT NULL DEFAULT '1' COMMENT 'Ordering of the case types',
-  `xml_definition` blob    COMMENT 'xml definition of case type',
+  `definition` blob    COMMENT 'xml definition of case type',
   PRIMARY KEY (`id`),
   UNIQUE KEY `case_type_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1;
@@ -436,6 +436,10 @@ UPDATE civicrm_navigation
 SET civicrm_navigation.url = CONCAT(SUBSTRING(url FROM 1 FOR LOCATE('&', url) - 1), '?', SUBSTRING(url FROM LOCATE('&', url) + 1))
 WHERE civicrm_navigation.url LIKE "%&%" AND civicrm_navigation.url NOT LIKE "%?%";
 
+-- CRM-14478 Add a "cleanup" policy for managed entities
+ALTER TABLE `civicrm_managed`
+ADD COLUMN `cleanup` varchar(32) COMMENT 'Policy on when to cleanup entity (always, never, unused)';
+
 -- CRM-14639
 
 SELECT @option_grant_status := id  FROM civicrm_option_group WHERE name = 'grant_status';
@@ -521,7 +525,7 @@ WHERE co.id IS NULL;
 
 -- CRM-14197 Add contribution_id to civicrm_line_item
 
-ALTER TABLE civicrm_line_item ADD contribution_id INT(10) COMMENT 'Contribution ID' NULL AFTER entity_id;
+ALTER TABLE civicrm_line_item ADD contribution_id INT(10) unsigned COMMENT 'Contribution ID' NULL AFTER entity_id;
 
 -- FK to civicrm_contribution
 
@@ -547,7 +551,11 @@ AND pv.membership_type_id IS NOT NULL
 AND membership_id IS NOT NULL;
 
 -- update line items for contributions with contribution id
-UPDATE civicrm_line_item
+UPDATE civicrm_line_item cln
+LEFT JOIN civicrm_contribution cc ON cc.id = cln.entity_id AND cln.contribution_id  IS NULL and cln.entity_table = 'civicrm_contribution'
 SET contribution_id = entity_id
-WHERE contribution_id IS NULL;
+WHERE cc.id IS NOT NULL;
+
+-- update case type menu
+UPDATE civicrm_navigation set url = 'civicrm/a/#/caseType' WHERE url LIKE 'civicrm/admin/options/case_type%';
 

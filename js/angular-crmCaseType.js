@@ -2,85 +2,145 @@
 
   var partialUrl = function(relPath) {
     return CRM.resourceUrls['civicrm'] + '/partials/crmCaseType/' + relPath;
-  } ;
+  };
 
-  var crmCaseType = angular.module('crmCaseType', ['ngRoute', 'ui.utils']);
+  var crmCaseType = angular.module('crmCaseType', ['ngRoute', 'ui.utils', 'crmUi', 'unsavedChanges']);
+
+  // Note: This template will be passed to cloneDeep(), so don't put any funny stuff in here!
+  var newCaseTypeTemplate = {
+    title: "",
+    name: "",
+    is_active: "1",
+    weight: "1",
+    definition: {
+      activityTypes: [
+        {name: 'Open Case', max_instances: 1 }
+      ],
+      activitySets: [
+        {
+          name: 'standard_timeline',
+          label: 'Standard Timeline',
+          timeline: '1', // Angular won't bind checkbox correctly with numeric 1
+          activityTypes: [
+            {name: 'Open Case', status: 'Completed' }
+          ]
+        }
+      ],
+      caseRoles: [
+        { name: 'Case Coordinator', creator: '1', manager: '1'}
+      ]
+    }
+  };
 
   crmCaseType.config(['$routeProvider',
     function($routeProvider) {
+      $routeProvider.when('/caseType', {
+        templateUrl: partialUrl('list.html'),
+        controller: 'CaseTypeListCtrl',
+        resolve: {
+          caseTypes: function($route, crmApi) {
+            return crmApi('CaseType', 'get', {});
+          }
+        }
+      });
       $routeProvider.when('/caseType/:id', {
         templateUrl: partialUrl('edit.html'),
-        controller: 'CaseTypeCtrl'
+        controller: 'CaseTypeCtrl',
+        resolve: {
+          apiCalls: function($route, crmApi) {
+            var reqs = {};
+            reqs.actStatuses = ['OptionValue', 'get', {
+              option_group_id: 'activity_status'
+            }];
+            reqs.actTypes = ['OptionValue', 'get', {
+              option_group_id: 'activity_type',
+              options: {
+                sort: 'name',
+                limit: 0
+              }
+            }];
+            reqs.relTypes = ['RelationshipType', 'get', {
+              options: {
+                sort: CRM.crmCaseType.REL_TYPE_CNAME,
+                limit: 0
+              }
+            }];
+            if ($route.current.params.id !== 'new') {
+              reqs.caseType = ['CaseType', 'getsingle', {
+                id: $route.current.params.id
+              }];
+            }
+            return crmApi(reqs);
+          }
+        }
       });
     }
   ]);
 
   // Add a new record by name.
   // Ex: <crmAddName crm-options="['Alpha','Beta','Gamma']" crm-var="newItem" crm-on-add="callMyCreateFunction(newItem)" />
-  crmCaseType.directive('crmAddName', function(){
+  crmCaseType.directive('crmAddName', function() {
     return {
       restrict: 'AE',
-      scope: {
-        crmOptions: '=',
-        crmVar: '=',
-        crmOnAdd: '&'
-      },
-      templateUrl: partialUrl('addName.html')
+      template: '<input class="add-activity" type="hidden" />',
+      link: function(scope, element, attrs) {
+        /// Format list of options for select2's "data"
+        var getFormattedOptions = function() {
+          return {
+            results: _.map(scope[attrs.crmOptions], function(option){
+              return {id: option, text: option};
+            })
+          };
+        };
+
+        var input = $('input', element);
+
+        scope._resetSelection = function() {
+          $(input).select2('close');
+          $(input).select2('val', '');
+          scope[attrs.crmVar] = '';
+        };
+
+        $(input).select2({
+          data: getFormattedOptions,
+          createSearchChoice: function(term) {
+            return {id: term, text: term};
+          }
+        });
+        $(input).on('select2-selecting', function(e) {
+          scope[attrs.crmVar] = e.val;
+          scope.$evalAsync(attrs.crmOnAdd);
+          scope.$evalAsync('_resetSelection()');
+          e.preventDefault();
+        });
+
+        scope.$watch(attrs.crmOptions, function(value) {
+          $(input).select2('data', getFormattedOptions);
+          $(input).select2('val', '');
+        });
+      }
     };
   });
 
-  crmCaseType.controller('CaseTypeCtrl', function($scope) {
+  crmCaseType.controller('CaseTypeCtrl', function($scope, crmApi, apiCalls) {
     $scope.partialUrl = partialUrl;
 
-    $scope.activityStatuses = CRM.crmCaseType.actStatuses;
-    $scope.activityTypes = CRM.crmCaseType.actTypes;
-    $scope.activityTypeNames = _.pluck(CRM.crmCaseType.actTypes, 'name');
+    $scope.activityStatuses = _.values(apiCalls.actStatuses.values);
+    $scope.activityTypes = apiCalls.actTypes.values;
+    $scope.activityTypeNames = _.pluck(apiCalls.actTypes.values, 'name');
+    $scope.relationshipTypeNames = _.pluck(apiCalls.relTypes.values, CRM.crmCaseType.REL_TYPE_CNAME); // CRM_Case_XMLProcessor::REL_TYPE_CNAME
+    $scope.locks = {caseTypeName: true};
 
     $scope.workflows = {
       'timeline': 'Timeline',
-      'pipeline': 'Sequence'
+      'sequence': 'Sequence'
     };
 
-    $scope.caseType = {
-      id: 123,
-      label: 'Adult Day Care Referral',
-      description: 'Superkalafragalisticexpialitotious',
-      is_active: '1', // Angular won't bind checkbox correctly with numeric 1
-      definition: {  // This is the serialized field
-        name: 'Adult Day Care Referral',
-        activityTypes: [
-          {name: 'Open Case', max_instances: 1 },
-          {name: 'Medical evaluation'}
-        ],
-        activitySets: [
-          {
-            name: 'standard_timeline',
-            label: 'Standard Timeline',
-            timeline: '1', // Angular won't bind checkbox correctly with numeric 1
-            activityTypes: [
-              {name: 'Open Case', status: 'Completed' },
-              {name: 'Medical evaluation', reference_activity: 'Open Case', reference_offset: 3, reference_select: 'newest'}
-            ]
-          },
-          {
-            name: 'my_sequence',
-            label: 'My Sequence',
-            pipeline: '1', // Angular won't bind checkbox correctly with numeric 1
-            activityTypes: [
-              {name: 'Medical evaluation'},
-              {name: 'Meeting'},
-              {name: 'Phone Call'}
-            ]
-          }
-
-        ],
-        caseRoles: [
-          { name: 'Senior Services Coordinator', creator: '1', manager: '1' },
-          { name: 'Health Services Coordinator' },
-          { name: 'Benefits Specialist' }
-        ]
-      }
-    };
+    $scope.caseType = apiCalls.caseType ? apiCalls.caseType : _.cloneDeep(newCaseTypeTemplate);
+    $scope.caseType.definition = $scope.caseType.definition || [];
+    $scope.caseType.definition.activityTypes = $scope.caseType.definition.activityTypes || [];
+    $scope.caseType.definition.activitySets = $scope.caseType.definition.activitySets || [];
+    $scope.caseType.definition.caseRoles = $scope.caseType.definition.caseRoles || [];
     window.ct = $scope.caseType;
 
     $scope.addActivitySet = function(workflow) {
@@ -103,8 +163,15 @@
     /// Add a new activity entry to an activity-set
     $scope.addActivity = function(activitySet, activityType) {
       activitySet.activityTypes.push({
-        name: activityType
+        name: activityType,
+        status: 'Scheduled',
+        reference_activity: 'Open Case',
+        reference_offset: '1',
+        reference_select: 'newest'
       });
+      if (!_.contains($scope.activityTypeNames, activityType)) {
+        $scope.activityTypeNames.push(activityType);
+      }
     };
 
     /// Add a new top-level activity-type entry
@@ -114,6 +181,23 @@
         $scope.caseType.definition.activityTypes.push({
           name: activityType
         });
+
+      }
+      if (!_.contains($scope.activityTypeNames, activityType)) {
+        $scope.activityTypeNames.push(activityType);
+      }
+    };
+
+    /// Add a new role
+    $scope.addRole = function(roles, roleName) {
+      var names = _.pluck($scope.caseType.definition.caseRoles, 'name');
+      if (!_.contains(names, roleName)) {
+        roles.push({
+          name: roleName
+        });
+      }
+      if (!_.contains($scope.relationshipTypeNames, roleName)) {
+        $scope.relationshipTypeNames.push(roleName);
       }
     };
 
@@ -136,8 +220,8 @@
       switch (workflow) {
         case 'timeline':
           return true;
-        case 'pipeline':
-          return 0 == _.where($scope.caseType.definition.activitySets, {pipeline: '1'}).length;
+        case 'sequence':
+          return 0 == _.where($scope.caseType.definition.activitySets, {sequence: '1'}).length;
         default:
           if (console && console.log) console.log('Denied access to unrecognized workflow: (' + workflow + ')');
           return false;
@@ -160,8 +244,8 @@
     $scope.activityTableTemplate = function(activitySet) {
       if (activitySet.timeline) {
         return partialUrl('timelineTable.html');
-      } else if (activitySet.pipeline) {
-        return partialUrl('pipelineTable.html');
+      } else if (activitySet.sequence) {
+        return partialUrl('sequenceTable.html');
       } else {
         return '';
       }
@@ -171,11 +255,58 @@
       console.log($scope.caseType);
     };
 
+    $scope.save = function() {
+      var result = crmApi('CaseType', 'create', $scope.caseType, true);
+      result.success(function(data) {
+        if (data.is_error == 0) {
+          $scope.caseType.id = data.id;
+          window.location.href = '#/caseType';
+        }
+      });
+    };
+
     $scope.$watchCollection('caseType.definition.activitySets', function() {
       _.defer(function() {
-          $('.crmCaseType-acttab').tabs('refresh');
+        $('.crmCaseType-acttab').tabs('refresh');
       });
     });
+
+    var updateCaseTypeName = function () {
+      if (!$scope.caseType.id && $scope.locks.caseTypeName) {
+        // Should we do some filtering? Lowercase? Strip whitespace?
+        var t = $scope.caseType.title ? $scope.caseType.title : '';
+        $scope.caseType.name = t.replace(/ /g, '_').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+      }
+    };
+    $scope.$watch('locks.caseTypeName', updateCaseTypeName);
+    $scope.$watch('caseType.title', updateCaseTypeName);
+  });
+
+  crmCaseType.controller('CaseTypeListCtrl', function($scope, crmApi, caseTypes) {
+    $scope.caseTypes = caseTypes.values;
+    $scope.toggleCaseType = function (caseType) {
+      caseType.is_active = (caseType.is_active == '1') ? '0' : '1';
+      crmApi('CaseType', 'create', caseType, true)
+        .then(function (data) {
+          if (data.is_error) {
+            caseType.is_active = (caseType.is_active == '1') ? '0' : '1'; // revert
+            $scope.$digest();
+          }
+        });
+    };
+    $scope.deleteCaseType = function (caseType) {
+      crmApi('CaseType', 'delete', {id: caseType.id}, {
+        error: function (data) {
+          CRM.alert(data.error_message, ts('Error'));
+        }
+      })
+        .then(function (data) {
+          if (!data.is_error) {
+            delete caseTypes.values[caseType.id];
+            $scope.$digest();
+          }
+        });
+    };
   });
 
 })(angular, CRM.$, CRM._);

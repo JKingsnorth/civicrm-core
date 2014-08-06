@@ -21,10 +21,14 @@
     text-align: center;
 }
 
-.crmCaseType input[type=number] {
+.crmCaseType input.number {
     width: 3.5em;
 }
 
 .crmCaseType .add-activity {
     width: 50%;
+}
+
+.crmCaseType table td select {
+    width: 10em;
 }
