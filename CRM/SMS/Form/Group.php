@@ -261,6 +261,15 @@ class CRM_SMS_Form_Group extends CRM_Contact_Form_Task {
       $params['created_date'] = date('YmdHis');
     }
 
+    // Add the default SMS provider
+    if (empty($params['sms_provider_id'])) {
+        $result = civicrm_api3('SmsProvider', 'get', array(
+          'sequential' => 1,
+          'is_default' => 1,
+        ));
+      $params['sms_provider_id'] = !empty($result['id']) ? $result['id'] : NULL;
+    }
+
     $mailing = CRM_Mailing_BAO_Mailing::create($params, $ids);
 
     $this->set('mailing_id', $mailing->id);
